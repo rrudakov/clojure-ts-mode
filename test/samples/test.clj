@@ -263,7 +263,7 @@
   ([x] x)
   ([x y] (. clojure.lang.Numbers (max x y)))
   ([x y & more]
-     (reduce1 max (max x y) more)))
+   (reduce1 max (max x y) more)))
 
 ;; definitions with metadata only don't cause freezing
 (def ^String)
