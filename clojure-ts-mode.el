@@ -371,18 +371,22 @@ Only intended for use at development time.")
   "Return a regular expression that matches one of SYMBOLS exactly."
   (concat "^" (regexp-opt symbols) "$"))
 
-(defvar clojure-ts-function-docstring-symbols
-  '("definline"
-    "defmulti"
-    "defmacro"
-    "defn"
-    "defn-"
-    "defprotocol"
-    "ns")
+(defconst clojure-ts-function-docstring-symbols
+  (eval-and-compile
+    (rx line-start
+        (or "definline"
+            "defmulti"
+            "defmacro"
+            "defn"
+            "defn-"
+            "defprotocol"
+            "ns")
+        line-end))
   "Symbols that accept an optional docstring as their second argument.")
 
-(defvar clojure-ts-definition-docstring-symbols
-  '("def")
+(defconst clojure-ts-definition-docstring-symbols
+  (eval-and-compile
+    (rx line-start "def" line-end))
   "Symbols that accept an optional docstring as their second argument.
 Any symbols added here should only treat their second argument as a docstring
 if a third argument (the value) is provided.
@@ -424,9 +428,9 @@ if a third argument (the value) is provided.
                :anchor [(comment) (meta_lit) (old_meta_lit)] :*
                :anchor (sym_lit) ; variable name
                :anchor [(comment) (meta_lit) (old_meta_lit)] :*
-               :anchor (str_lit) ,capture-symbol
+               :anchor (str_lit (str_content) ,capture-symbol) @font-lock-doc-face
                :anchor (_)) ; the variable's value
-     (:match ,(clojure-ts-symbol-regexp clojure-ts-definition-docstring-symbols)
+     (:match ,clojure-ts-definition-docstring-symbols
              @_def_symbol))
     ;; Captures docstrings in metadata of definitions
     ((list_lit :anchor (sym_lit) @_def_symbol
@@ -435,7 +439,7 @@ if a third argument (the value) is provided.
                         value: (map_lit
                                 (kwd_lit) @_doc-keyword
                                 :anchor
-                                (str_lit) ,capture-symbol)))
+                                (str_lit (str_content) ,capture-symbol) @font-lock-doc-face)))
      ;; We're only supporting this on a fixed set of defining symbols
      ;; Existing regexes don't encompass def and defn
      ;; Naming another regex is very cumbersome.
@@ -452,16 +456,21 @@ if a third argument (the value) is provided.
                :anchor [(comment) (meta_lit) (old_meta_lit)] :*
                :anchor (sym_lit) ; function_name
                :anchor [(comment) (meta_lit) (old_meta_lit)] :*
-               :anchor (str_lit) ,capture-symbol)
-     (:match ,(clojure-ts-symbol-regexp clojure-ts-function-docstring-symbols)
+               :anchor (str_lit (str_content) ,capture-symbol) @font-lock-doc-face)
+     (:match ,clojure-ts-function-docstring-symbols
              @_def_symbol))
     ;; Captures docstrings in defprotcol, definterface
     ((list_lit :anchor (sym_lit) @_def_symbol
                (list_lit
+                :anchor [(comment) (meta_lit) (old_meta_lit)] :*
                 :anchor (sym_lit) (vec_lit) :*
-                (str_lit) ,capture-symbol :anchor)
+                :anchor [(comment) (meta_lit) (old_meta_lit)] :*
+                (str_lit (str_content) ,capture-symbol) @font-lock-doc-face :anchor)
                :*)
      (:match ,clojure-ts--interface-def-symbol-regexp @_def_symbol))))
+
+(defvar clojure-ts--match-docstring-query-compiled
+  (treesit-query-compile 'clojure (clojure-ts--docstring-query '@docstring)))
 
 (defun clojure-ts--treesit-range-settings (use-markdown-inline use-regex)
   "Return value for `treesit-range-settings' for `clojure-ts-mode'.
@@ -475,16 +484,16 @@ When USE-REGEX is non-nil, include range settings for regex parser."
      (treesit-range-rules
       :embed 'markdown-inline
       :host 'clojure
-      :offset '(1 . -1)
+      ;; :offset '(1 . -1)
       :local t
       (clojure-ts--docstring-query '@capture)))
    (when use-regex
      (treesit-range-rules
       :embed 'regex
       :host 'clojure
-      :offset '(2 . -1)
+      ;; :offset '(2 . -1)
       :local t
-      '((regex_lit) @capture)))))
+      '((regex_content) @capture)))))
 
 (defun clojure-ts--font-lock-settings (markdown-available regex-available)
   "Return font lock settings suitable for use in `treesit-font-lock-settings'.
@@ -500,11 +509,6 @@ literals with regex grammar."
     :language 'clojure
     '((str_lit) @font-lock-string-face
       (regex_lit) @font-lock-regexp-face)
-
-    :feature 'regex
-    :language 'clojure
-    :override t
-    '((regex_lit marker: _ @font-lock-property-face))
 
     :feature 'number
     :language 'clojure
@@ -530,15 +534,19 @@ literals with regex grammar."
     ;; `clojure.core'.
     :feature 'builtin
     :language 'clojure
-    `(((list_lit :anchor (sym_lit !namespace name: (sym_name) @font-lock-keyword-face))
+    `(((list_lit :anchor [(comment) (meta_lit) (old_meta_lit)] :*
+                 :anchor (sym_lit !namespace name: (sym_name) @font-lock-keyword-face))
        (:match ,clojure-ts--builtin-symbol-regexp @font-lock-keyword-face))
-      ((list_lit :anchor (sym_lit namespace: ((sym_ns) @ns
+      ((list_lit :anchor [(comment) (meta_lit) (old_meta_lit)] :*
+                 :anchor (sym_lit namespace: ((sym_ns) @ns
                                               (:equal "clojure.core" @ns))
                                   name: (sym_name) @font-lock-keyword-face))
        (:match ,clojure-ts--builtin-symbol-regexp @font-lock-keyword-face))
-      ((anon_fn_lit :anchor (sym_lit !namespace name: (sym_name) @font-lock-keyword-face))
+      ((anon_fn_lit :anchor [(comment) (meta_lit) (old_meta_lit)] :*
+                    :anchor (sym_lit !namespace name: (sym_name) @font-lock-keyword-face))
        (:match ,clojure-ts--builtin-symbol-regexp @font-lock-keyword-face))
-      ((anon_fn_lit :anchor (sym_lit namespace: ((sym_ns) @ns
+      ((anon_fn_lit :anchor [(comment) (meta_lit) (old_meta_lit)] :*
+                    :anchor (sym_lit namespace: ((sym_ns) @ns
                                                  (:equal "clojure.core" @ns))
                                      name: (sym_name) @font-lock-keyword-face))
        (:match ,clojure-ts--builtin-symbol-regexp @font-lock-keyword-face))
@@ -586,16 +594,16 @@ literals with regex grammar."
       ;; Methods implementation
       ((list_lit
         :anchor [(comment) (meta_lit) (old_meta_lit)] :*
-        ((sym_lit name: (sym_name) @def)
-         ((:match ,(rx-to-string
-                    `(seq bol
-                          (or
-                           "defrecord"
-                           "definterface"
-                           "deftype"
-                           "defprotocol")
-                          eol))
-                  @def)))
+        :anchor ((sym_lit name: (sym_name) @def)
+                 ((:match ,(rx-to-string
+                            `(seq bol
+                                  (or
+                                   "defrecord"
+                                   "definterface"
+                                   "deftype"
+                                   "defprotocol")
+                                  eol))
+                          @def)))
         :anchor [(comment) (meta_lit) (old_meta_lit)] :*
         :anchor
         (sym_lit (sym_name) @font-lock-type-face)
@@ -672,7 +680,7 @@ literals with regex grammar."
      (treesit-font-lock-rules
       :feature 'doc
       :language 'markdown-inline
-      :override t
+      :override 'prepend
       `([((image_description) @link)
          ((link_destination) @font-lock-constant-face)
          ((code_span) @font-lock-constant-face)
@@ -1048,6 +1056,7 @@ The possible values for this variable are
     ("try"             . ((:block 0)))
     ("with-out-str"    . ((:block 0)))
     ("defprotocol"     . ((:block 1) (:inner 1)))
+    ("definterface"    . ((:block 1) (:inner 1)))
     ("binding"         . ((:block 1)))
     ("case"            . ((:block 1)))
     ("cond->"          . ((:block 1)))
@@ -1346,44 +1355,15 @@ according to the rule.  If NODE is nil, use next node after BOL."
           clojure-ts--threading-macro
           first-child))))
 
-(defun clojure-ts--match-fn-docstring (node)
-  "Match NODE when it is a docstring for PARENT function definition node."
-  ;; A string that is the third node in a function defn block
-  (let ((parent (treesit-node-parent node)))
-    (and (treesit-node-eq node (treesit-node-child parent 2 t))
-         (let ((first-auncle (treesit-node-child parent 0 t)))
-           (clojure-ts--symbol-matches-p
-            (regexp-opt clojure-ts-function-docstring-symbols)
-            first-auncle)))))
-
-(defun clojure-ts--match-def-docstring (node)
-  "Match NODE when it is a docstring for PARENT variable definition node."
-  ;; A string that is the fourth node in a variable definition block.
-  (let ((parent (treesit-node-parent node)))
-    (and (treesit-node-eq node (treesit-node-child parent 2 t))
-         ;; There needs to be a value after the string.
-         ;; If there is no 4th child, then this string is the value.
-         (treesit-node-child parent 3 t)
-         (let ((first-auncle (treesit-node-child parent 0 t)))
-           (clojure-ts--symbol-matches-p
-            (regexp-opt clojure-ts-definition-docstring-symbols)
-            first-auncle)))))
-
-(defun clojure-ts--match-method-docstring (node)
-  "Match NODE when it is a docstring in a method definition."
-  (let* ((grandparent (treesit-node-parent ;; the protocol/interface
-                       (treesit-node-parent node))) ;; the method definition
-         (first-grandauncle (treesit-node-child grandparent 0 t)))
-    (clojure-ts--symbol-matches-p
-     clojure-ts--interface-def-symbol-regexp
-     first-grandauncle)))
-
 (defun clojure-ts--match-docstring (_node parent _bol)
   "Match PARENT when it is a docstring node."
-  (and (clojure-ts--string-node-p parent) ;; We are IN a string
-       (or (clojure-ts--match-def-docstring parent)
-           (clojure-ts--match-fn-docstring parent)
-           (clojure-ts--match-method-docstring parent))))
+  (when-let* ((top-level-node (treesit-parent-until parent 'defun t))
+              (result (treesit-query-capture top-level-node
+                                             clojure-ts--match-docstring-query-compiled)))
+    (seq-find (lambda (elt)
+                (and (eq (car elt) 'docstring)
+                     (treesit-node-eq (cdr elt) parent)))
+              result)))
 
 (defun clojure-ts--match-with-metadata (node &optional _parent _bol)
   "Match NODE when it has metadata."
@@ -1518,7 +1498,15 @@ function literal."
                                              "definline"
                                              "defrecord"
                                              "defmacro"
-                                             "defmulti")
+                                             "defmulti"
+                                             "defonce"
+                                             "defprotocol"
+                                             "deftest"
+                                             "deftest-"
+                                             "ns"
+                                             "definterface"
+                                             "deftype"
+                                             "defstruct")
                                          eol)))
 
 (defconst clojure-ts--markdown-inline-sexp-nodes
@@ -1529,7 +1517,7 @@ function literal."
 
 (defun clojure-ts--default-sexp-node-p (node)
   "Return TRUE if point is after the # marker of set or function literal NODE."
-  (and (eq (char-before (point)) ?\#)
+  (and (eq (char-before) ?\#)
        (string-match-p (rx bol (or "anon_fn_lit" "set_lit") eol)
                        (treesit-node-type (treesit-node-parent node)))))
 
@@ -1539,7 +1527,7 @@ function literal."
      (list ,(regexp-opt clojure-ts--list-nodes))
      (sexp-default
       ;; For `C-M-f' in "#|(a)" or "#|{1 2 3}"
-      (,(rx (or "(" "{")) . ,#'clojure-ts--default-sexp-node-p))
+      (,(rx (or "#(" "#{")) . ,#'clojure-ts--default-sexp-node-p))
      (text ,(regexp-opt '("comment")))
      (defun ,#'clojure-ts--defun-node-p))
     (when clojure-ts-use-markdown-inline
@@ -1590,7 +1578,10 @@ BOUND bounds the whitespace search."
           (when-let* ((cur-sexp (treesit-node-first-child-for-pos root-node (point) t)))
             (goto-char (treesit-node-start cur-sexp))
             (if (clojure-ts--metadata-node-p cur-sexp)
-                (treesit-end-of-thing 'sexp 2 'restricted)
+                (progn
+                  (treesit-end-of-thing 'sexp 1 'restricted)
+                  (just-one-space)
+                  (treesit-end-of-thing 'sexp 1 'restricted))
               (treesit-end-of-thing 'sexp 1 'restricted))
             (when (looking-at-p ",")
               (forward-char))
@@ -1623,6 +1614,33 @@ BOUND bounds the whitespace search."
                                        sexp-end
                                        t)))
 
+(defvar clojure-ts--align-query
+  (treesit-query-compile 'clojure
+                         (append
+                          `(((map_lit) @map)
+                            ((ns_map_lit) @ns-map)
+                            ((list_lit
+                              ((sym_lit) @sym
+                               (:match ,(clojure-ts-symbol-regexp clojure-ts-align-binding-forms) @sym))
+                              (vec_lit) @bindings-vec))
+                            ((list_lit
+                              ((sym_lit) @sym
+                               (:match ,(clojure-ts-symbol-regexp clojure-ts-align-cond-forms) @sym)))
+                             @cond)
+                            ((anon_fn_lit
+                              ((sym_lit) @sym
+                               (:match ,(clojure-ts-symbol-regexp clojure-ts-align-binding-forms) @sym))
+                              (vec_lit) @bindings-vec))
+                            ((anon_fn_lit
+                              ((sym_lit) @sym
+                               (:match ,(clojure-ts-symbol-regexp clojure-ts-align-cond-forms) @sym)))
+                             @cond)))))
+
+(defvar clojure-ts--align-reader-conditionals-query
+  (treesit-query-compile 'clojure
+                         '(((read_cond_lit) @read-cond)
+                           ((splicing_read_cond_lit) @read-cond))))
+
 (defun clojure-ts--get-nodes-to-align (beg end)
   "Return a plist of nodes data for alignment.
 
@@ -1637,31 +1655,15 @@ have changed."
   ;; By default `treesit-query-capture' captures all nodes that cross the range.
   ;; We need to restrict it to only nodes inside of the range.
   (let* ((region-node (clojure-ts--region-node beg end))
-         (query (treesit-query-compile 'clojure
-                                       (append
-                                        `(((map_lit) @map)
-                                          ((ns_map_lit) @ns-map)
-                                          ((list_lit
-                                            ((sym_lit) @sym
-                                             (:match ,(clojure-ts-symbol-regexp clojure-ts-align-binding-forms) @sym))
-                                            (vec_lit) @bindings-vec))
-                                          ((list_lit
-                                            ((sym_lit) @sym
-                                             (:match ,(clojure-ts-symbol-regexp clojure-ts-align-cond-forms) @sym)))
-                                           @cond)
-                                          ((anon_fn_lit
-                                            ((sym_lit) @sym
-                                             (:match ,(clojure-ts-symbol-regexp clojure-ts-align-binding-forms) @sym))
-                                            (vec_lit) @bindings-vec))
-                                          ((anon_fn_lit
-                                            ((sym_lit) @sym
-                                             (:match ,(clojure-ts-symbol-regexp clojure-ts-align-cond-forms) @sym)))
-                                           @cond))
-                                        (when clojure-ts-align-reader-conditionals
-                                          '(((read_cond_lit) @read-cond)
-                                            ((splicing_read_cond_lit) @read-cond)))))))
-    (thread-last (treesit-query-capture region-node query beg end)
+         (nodes (append (treesit-query-capture region-node clojure-ts--align-query beg end)
+                        (when clojure-ts-align-reader-conditionals
+                          (treesit-query-capture region-node clojure-ts--align-reader-conditionals-query beg end)))))
+    (thread-last nodes
                  (seq-remove (lambda (elt) (eq (car elt) 'sym)))
+                 ;; Reverse the result to align the most deeply nested nodes
+                 ;; first.  This way we can prevent breaking alignment of outer
+                 ;; nodes.
+                 (seq-reverse)
                  ;; When first node is reindented, all other nodes become
                  ;; outdated.  Executing the entire query everytime is very
                  ;; expensive, instead we use markers for every captured node to
@@ -2454,7 +2456,7 @@ before DELIM-OPEN."
       (message "clojure-ts-mode %s" clojure-ts-mode-version))))
 
 (defconst clojure-ts-grammar-recipes
-  '((clojure "https://github.com/rrudakov/tree-sitter-clojure.git"
+  '((clojure "https://github.com/sogaiu/tree-sitter-clojure.git"
              ;; "v0.0.13"
              "standalone-metadata-nodes")
     (markdown-inline "https://github.com/MDeiml/tree-sitter-markdown"
