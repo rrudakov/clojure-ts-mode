@@ -602,11 +602,12 @@ and end of the NODE, so we ignore them."
    '((str_lit open: _ @font-lock-string-face
               (str_content) @clojure-ts--fontify-string
               close: _ @font-lock-string-face)
-     (regex_lit) @font-lock-regexp-face)
+     (regex_lit open: _ @font-lock-regexp-face
+                (regex_content) @font-lock-regexp-face
+                close: _ @font-lock-regexp-face))
 
    :feature 'regex
    :language 'clojure
-   :override t
    '((regex_lit marker: _ @font-lock-punctuation-face))
 
    :feature 'number
@@ -1151,6 +1152,10 @@ Includes a dispatch value when applicable (defmethods)."
   "Return non-nil if NODE represents a protocol or interface definition."
   (clojure-ts--definition-node-match-p clojure-ts--interface-type-regexp node))
 
+(defun clojure-ts--value-type-node-p (node)
+  "Return non-nil if field name of the NODE is value."
+  (string= (treesit-node-field-name node) "value"))
+
 (defvar clojure-ts--imenu-settings
   `(("Namespace" "list_lit" clojure-ts--ns-node-p)
     ("Function" "list_lit" clojure-ts--function-node-p
@@ -1441,17 +1446,34 @@ If NS is defined, then the fully qualified symbol is passed to
                        (seq-sort (lambda (spec1 _spec2)
                                    (equal (car spec1) :block)))))))))
 
-(defun clojure-ts--find-semantic-rules-for-node (node)
-  "Return a list of semantic rules for NODE."
-  (let* ((first-child (clojure-ts--node-child-skip-metadata node 0))
-         (symbol-name (clojure-ts--named-node-text first-child))
-         (symbol-namespace (clojure-ts--node-namespace-text first-child)))
+(defvar clojure-ts--dynamic-indent-for-symbol-cache
+  (make-hash-table :test 'equal))
+
+(defvar clojure-ts--dynamic-indent-for-symbol-cache-p nil
+  "If set to nil, do not use cache for dynamic indentation rules.")
+
+(defun clojure-ts--find-semantic-rules-for-symbol (node)
+  "Return a list of semantic rules for symbol NODE.
+
+If rules are not found return :not-found symbol."
+  (let ((symbol-name (clojure-ts--named-node-text node))
+        (symbol-namespace (clojure-ts--node-namespace-text node)))
     (or (clojure-ts--dynamic-indent-for-symbol symbol-name symbol-namespace)
         (alist-get symbol-name
                    clojure-ts--semantic-indent-rules-cache
                    nil
                    nil
-                   #'equal))))
+                   #'equal)
+        :not-found)))
+
+(defun clojure-ts--find-semantic-rules-for-node (node)
+  "Return a list of semantic rules for NODE."
+  (let* ((first-child (clojure-ts--first-value-child node))
+         (symbol-full-name (treesit-node-text first-child)))
+    (if clojure-ts--dynamic-indent-for-symbol-cache-p
+        (with-memoization (gethash symbol-full-name clojure-ts--dynamic-indent-for-symbol-cache)
+          (clojure-ts--find-semantic-rules-for-symbol first-child))
+      (clojure-ts--find-semantic-rules-for-symbol first-child))))
 
 (defun clojure-ts--find-semantic-rule (node parent current-depth)
   "Return a suitable indentation rule for NODE, considering the CURRENT-DEPTH.
@@ -1463,7 +1485,8 @@ increasing the CURRENT-DEPTH.  If a rule is not found upon reaching the
 root of the syntax tree, it returns nil.  A rule is considered a match
 only if the CURRENT-DEPTH matches the rule's required depth."
   (let* ((idx (- (treesit-node-index node) 2)))
-    (if-let* ((rule-set (clojure-ts--find-semantic-rules-for-node parent)))
+    (if-let* ((rule-set (clojure-ts--find-semantic-rules-for-node parent))
+              ((not (equal rule-set :not-found))))
         (if (zerop current-depth)
             (let ((rule (car rule-set)))
               (if (equal (car rule) :block)
@@ -1918,9 +1941,11 @@ between BEG and END."
                            (end (clojure-ts--end-of-defun-pos)))
                        (list start end))))))
   (setq end (copy-marker end))
+  (clrhash clojure-ts--dynamic-indent-for-symbol-cache)
   (let* ((sexps-to-align (clojure-ts--get-nodes-to-align beg (marker-position end)))
          ;; We have to disable it here to avoid endless recursion.
-         (clojure-ts-align-forms-automatically nil))
+         (clojure-ts-align-forms-automatically nil)
+         (clojure-ts--dynamic-indent-for-symbol-cache-p t))
     (save-excursion
       (indent-region beg (marker-position end))
       (dolist (sexp sexps-to-align)
@@ -2405,6 +2430,7 @@ type, etc.  See `treesit-thing-settings' for more details."
   (interactive)
   (if-let* ((sym-regex (rx bol
                            (or "defn"
+                               "defn-"
                                "letfn"
                                "fn"
                                "defmacro"
