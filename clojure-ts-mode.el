@@ -600,11 +600,12 @@ and end of the NODE, so we ignore them."
    '((str_lit open: _ @font-lock-string-face
               (str_content) @clojure-ts--fontify-string
               close: _ @font-lock-string-face)
-     (regex_lit) @font-lock-regexp-face)
+     (regex_lit open: _ @font-lock-regexp-face
+                (regex_content) @font-lock-regexp-face
+                close: _ @font-lock-regexp-face))
 
    :feature 'regex
    :language 'clojure
-   :override t
    '((regex_lit marker: _ @font-lock-punctuation-face))
 
    :feature 'number
@@ -2637,6 +2638,7 @@ too, as the reader skips them."
   (interactive)
   (if-let* ((sym-regex (rx bol
                            (or "defn"
+                               "defn-"
                                "letfn"
                                "fn"
                                "defmacro"
