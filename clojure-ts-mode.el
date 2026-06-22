@@ -7,7 +7,7 @@
 ;; Maintainer: Bozhidar Batsov <bozhidar@batsov.dev>
 ;; URL: http://github.com/clojure-emacs/clojure-ts-mode
 ;; Keywords: languages clojure clojurescript lisp
-;; Version: 0.6.0
+;; Version: 0.7.0
 ;; Package-Requires: ((emacs "30.1"))
 
 ;; This file is not part of GNU Emacs.
@@ -854,20 +854,28 @@ updated indentation rules are always precalculated."
         (:match ,(clojure-ts-symbol-regexp syms)
                 @_def_symbol))))))
 
-(defun clojure-ts--set-extra-def-queries (symbol value)
-  "Setter function for `clojure-ts-extra-def-forms' variable.
+(defun clojure-ts--set-extra-def-queries (symbol value &optional scope)
+  "Setter for `clojure-ts-extra-def-forms'.
 
-Sets SYMBOL's top-level default value to VALUE and updates the
-`clojure-ts--clojure-extra-queries' in all `clojure-ts-mode'
-buffers, if any exist.
-
-NOTE: This function is not meant to be called directly."
-  (set-default-toplevel-value symbol value)
-  ;; Update value in every `clojure-ts-mode' buffer.
-  (let ((new-value (clojure-ts--compute-extra-def-queries value)))
+When SCOPE is `buffer-local' (Emacs's `setopt-local' / dir-locals path),
+set VALUE buffer-locally and recompute the extra def queries for the
+current buffer only.  Otherwise set the global SYMBOL value and
+recompute the queries in every `clojure-ts-mode' buffer from that
+buffer's own effective value, so a buffer carrying a local override is
+left untouched."
+  (if (eq scope 'buffer-local)
+      (progn
+        (set (make-local-variable symbol) value)
+        (setq-local clojure-ts--clojure-extra-queries
+                    (clojure-ts--compute-extra-def-queries value)))
+    (set-default-toplevel-value symbol value)
+    ;; Update value in every `clojure-ts-mode' buffer.
     (dolist (buf (buffer-list))
-      (when (buffer-local-boundp 'clojure-ts--clojure-extra-queries buf)
-        (setq clojure-ts--clojure-extra-queries new-value)))))
+      (with-current-buffer buf
+        (when (derived-mode-p 'clojure-ts-mode)
+          (setq clojure-ts--clojure-extra-queries
+                (clojure-ts--compute-extra-def-queries
+                 (buffer-local-value symbol buf))))))))
 
 (defcustom clojure-ts-extra-def-forms nil
   "List of forms that should be fontified the same way as defn."
@@ -1322,20 +1330,27 @@ This ensures that updated indentation rules are always precalculated."
              clojure-ts--semantic-indent-rules-defaults
              (lambda (e1 e2) (equal (car e1) (car e2)))))
 
-(defun clojure-ts--set-semantic-indent-rules (symbol value)
-  "Setter function for `clojure-ts-semantic-indent-rules' variable.
+(defun clojure-ts--set-semantic-indent-rules (symbol value &optional scope)
+  "Setter for `clojure-ts-semantic-indent-rules'.
 
-Sets SYMBOL's top-level default value to VALUE and updates the
-`clojure-ts--semantic-indent-rules-cache' in all `clojure-ts-mode'
-buffers, if any exist.
-
-NOTE: This function is not meant to be called directly."
-  (set-default-toplevel-value symbol value)
-  ;; Update cache in every `clojure-ts-mode' buffer.
-  (let ((new-cache (clojure-ts--compute-semantic-indentation-rules-cache value)))
+When SCOPE is `buffer-local' (Emacs's `setopt-local' / dir-locals path),
+set VALUE buffer-locally and recompute the cache for the current buffer
+only.  Otherwise set the global SYMBOL value and recompute the cache in
+every `clojure-ts-mode' buffer from that buffer's own effective value,
+so a buffer carrying a local override is left untouched."
+  (if (eq scope 'buffer-local)
+      (progn
+        (set (make-local-variable symbol) value)
+        (setq-local clojure-ts--semantic-indent-rules-cache
+                    (clojure-ts--compute-semantic-indentation-rules-cache value)))
+    (set-default-toplevel-value symbol value)
+    ;; Update cache in every `clojure-ts-mode' buffer.
     (dolist (buf (buffer-list))
-      (when (buffer-local-boundp 'clojure-ts--semantic-indent-rules-cache buf)
-        (setq clojure-ts--semantic-indent-rules-cache new-cache)))))
+      (with-current-buffer buf
+        (when (derived-mode-p 'clojure-ts-mode)
+          (setq clojure-ts--semantic-indent-rules-cache
+                (clojure-ts--compute-semantic-indentation-rules-cache
+                 (buffer-local-value symbol buf))))))))
 
 (defcustom clojure-ts-semantic-indent-rules nil
   "Custom rules to extend default indentation rules for `semantic' style.
