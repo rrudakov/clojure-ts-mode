@@ -3969,14 +3969,10 @@ Those are set after the major mode."
   (when (local-variable-p 'clojure-ts-completion-enabled)
     (clojure-ts--setup-completion)))
 
-(defun clojure-ts--major-mode-setup ()
-  "Run `treesit-major-mode-setup', then override some of its settings.
-The modes that embed another language run the setup again once they've
-added its parser, so this is used for every run."
-  (treesit-major-mode-setup)
-  ;; It checks `clojure-ts-align-forms-automatically' when it runs, so that
-  ;; turning the option on later, or in .dir-locals.el, works.
-  (setq-local indent-region-function #'clojure-ts-indent-region)
+(defun clojure-ts--post-treesit-setup ()
+  "Apply customizations after `treesit-major-mode-setup'."
+  (when clojure-ts-align-forms-automatically
+    (setq-local indent-region-function #'clojure-ts-indent-region))
   ;; Workaround for treesit-transpose-sexps not correctly working with
   ;; treesit-thing-settings on Emacs 30.
   ;; Once treesit-transpose-sexps is working again this can be removed
@@ -3990,6 +3986,7 @@ added its parser, so this is used for every run."
 
 \\{clojure-ts-mode-map}"
   :syntax-table clojure-ts-mode-syntax-table
+  :after-hook (clojure-ts--post-treesit-setup)
   (clojure-ts--ensure-grammars)
   (let ((use-markdown-inline (and clojure-ts-use-markdown-inline
                                   (treesit-ready-p 'markdown-inline t)))
@@ -4009,7 +4006,7 @@ added its parser, so this is used for every run."
           (setq-local treesit--font-lock-verbose t))
         (treesit-inspect-mode))
 
-      (clojure-ts--major-mode-setup)
+      (treesit-major-mode-setup)
       (clojure-ts--apply-local-variables)
       (add-hook 'hack-local-variables-hook #'clojure-ts--apply-local-variables 0 t))))
 
@@ -4033,8 +4030,7 @@ added its parser, so this is used for every run."
                          '(((list_lit (sym_lit) @_sym-name
                                       :anchor (str_lit (str_content) @capture))
                             (:equal @_sym-name "js*"))))))
-    (clojure-ts--add-config-for-mode 'js-ts-mode)
-    (clojure-ts--major-mode-setup)))
+    (clojure-ts--add-config-for-mode 'js-ts-mode)))
 
 ;;;###autoload
 (define-derived-mode clojure-ts-clojurec-mode clojure-ts-mode "ClojureC[TS]"
@@ -4064,8 +4060,7 @@ added its parser, so this is used for every run."
                          '(((list_lit (sym_lit) @_sym-name
                                       :anchor (str_lit (str_content) @capture))
                             (:equal @_sym-name "cpp/raw"))))))
-    (clojure-ts--add-config-for-mode 'c++-ts-mode)
-    (clojure-ts--major-mode-setup)))
+    (clojure-ts--add-config-for-mode 'c++-ts-mode)))
 
 ;;;###autoload
 (define-derived-mode clojure-ts-joker-mode clojure-ts-mode "Joker[TS]"
