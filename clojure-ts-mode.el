@@ -3252,12 +3252,24 @@ REGEX-AVAILABLE."
     (add-hook 'completion-at-point-functions
               #'clojure-ts-completion-at-point-function nil 'local)))
 
+(defun clojure-ts--post-treesit-setup ()
+  "Apply customizations after `treesit-major-mode-setup'."
+  (when clojure-ts-align-forms-automatically
+    (setq-local indent-region-function #'clojure-ts-indent-region))
+  ;; Workaround for treesit-transpose-sexps not correctly working with
+  ;; treesit-thing-settings on Emacs 30.
+  ;; Once treesit-transpose-sexps is working again this can be removed
+  (when (and (fboundp 'transpose-sexps-default-function)
+             (< emacs-major-version 31))
+    (setq-local transpose-sexps-function #'transpose-sexps-default-function)))
+
 ;;;###autoload
 (define-derived-mode clojure-ts-mode prog-mode "Clojure[TS]"
   "Major mode for editing Clojure code.
 
 \\{clojure-ts-mode-map}"
   :syntax-table clojure-ts-mode-syntax-table
+  :after-hook (clojure-ts--post-treesit-setup)
   (clojure-ts--ensure-grammars)
   (let ((use-markdown-inline (and clojure-ts-use-markdown-inline
                                   (treesit-ready-p 'markdown-inline t)))
@@ -3279,11 +3291,6 @@ REGEX-AVAILABLE."
 
       (treesit-major-mode-setup)
 
-      ;; We should assign this after calling `treesit-major-mode-setup',
-      ;; otherwise it will be overwritten.
-      (when clojure-ts-align-forms-automatically
-        (setq-local indent-region-function #'clojure-ts-indent-region))
-
       ;; Initial indentation rules cache calculation.
       (setq clojure-ts--semantic-indent-rules-cache
             (clojure-ts--compute-semantic-indentation-rules-cache clojure-ts-semantic-indent-rules))
@@ -3298,14 +3305,7 @@ REGEX-AVAILABLE."
                         clojure-ts--clojure-extra-queries
                         (clojure-ts--compute-extra-def-queries clojure-ts-extra-def-forms)))
                 0
-                t)
-
-      ;; Workaround for treesit-transpose-sexps not correctly working with
-      ;; treesit-thing-settings on Emacs 30.
-      ;; Once treesit-transpose-sexps is working again this can be removed
-      (when (and (fboundp 'transpose-sexps-default-function)
-                 (< emacs-major-version 31))
-        (setq-local transpose-sexps-function #'transpose-sexps-default-function)))))
+                t))))
 
 ;; For Emacs 30+, so that `clojure-ts-mode' is treated as deriving from
 ;; `clojure-mode' in the context of `derived-mode-p'
