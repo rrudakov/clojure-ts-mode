@@ -3511,11 +3511,8 @@ REGEX-AVAILABLE."
     (add-hook 'completion-at-point-functions
               #'clojure-ts-completion-at-point-function nil 'local)))
 
-(defun clojure-ts--major-mode-setup ()
-  "Run `treesit-major-mode-setup', then override some of its settings.
-The modes that embed another language run the setup again once they've
-added its parser, so this is used for every run."
-  (treesit-major-mode-setup)
+(defun clojure-ts--post-treesit-setup ()
+  "Apply customizations after `treesit-major-mode-setup'."
   (when clojure-ts-align-forms-automatically
     (setq-local indent-region-function #'clojure-ts-indent-region))
   ;; Workaround for treesit-transpose-sexps not correctly working with
@@ -3531,6 +3528,7 @@ added its parser, so this is used for every run."
 
 \\{clojure-ts-mode-map}"
   :syntax-table clojure-ts-mode-syntax-table
+  :after-hook (clojure-ts--post-treesit-setup)
   (clojure-ts--ensure-grammars)
   (let ((use-markdown-inline (and clojure-ts-use-markdown-inline
                                   (treesit-ready-p 'markdown-inline t)))
@@ -3550,7 +3548,7 @@ added its parser, so this is used for every run."
           (setq-local treesit--font-lock-verbose t))
         (treesit-inspect-mode))
 
-      (clojure-ts--major-mode-setup)
+      (treesit-major-mode-setup)
 
       ;; Initial indentation rules cache calculation.
       (setq clojure-ts--semantic-indent-rules-cache
