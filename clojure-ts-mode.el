@@ -1746,9 +1746,14 @@ function literal."
 
 (defun clojure-ts--default-sexp-node-p (node)
   "Return non-nil if point is after the # marker of set or function literal NODE."
-  (and (eq (char-before) ?\#)
-       (string-match-p (rx bol (or "anon_fn_lit" "set_lit") eol)
-                       (treesit-node-type (treesit-node-parent node)))))
+  ;; For `C-M-f' in "#|(a)" or "#|{1 2 3}"
+  (or (and (eq (char-before) ?\#)
+           (string-match-p (rx bol (or "anon_fn_lit" "set_lit" "regex_lit") eol)
+                           (treesit-node-type (treesit-node-parent node))))
+      ;; For `C-M-f' in "#?(:clj (inc 1))"
+      (and (eq (char-before) ?\?)
+           (string-match-p (rx bol "read_cond_lit" eol)
+                           (treesit-node-type (treesit-node-parent node))))))
 
 (defconst clojure-ts--thing-settings
   `((clojure
