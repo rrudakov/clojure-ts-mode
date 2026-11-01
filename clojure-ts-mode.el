@@ -1775,7 +1775,8 @@ It is simply `clojure-ts-docstring-fill-prefix-width' number of spaces."
 (defun clojure-ts--fill-paragraph (&optional justify)
   "Like `fill-paragraph', but can handle Clojure docstrings.
 If JUSTIFY is non-nil, justify as well as fill the paragraph."
-  (let ((current-node (treesit-node-at (point) 'clojure t)))
+  (let ((fill-paragraph-function nil)
+        (current-node (treesit-node-at (point) 'clojure t)))
     (if (clojure-ts--match-docstring nil current-node nil)
         (let ((fill-column (or clojure-ts-docstring-fill-column fill-column))
               (fill-prefix (clojure-ts--docstring-fill-prefix))
@@ -1785,7 +1786,9 @@ If JUSTIFY is non-nil, justify as well as fill the paragraph."
             (narrow-to-region beg-doc end-doc)
             (fill-paragraph justify)))
       (or (fill-comment-paragraph justify)
-          (fill-paragraph justify)))
+          (save-excursion
+            (beginning-of-defun)
+            (prog-fill-reindent-defun))))
     t))
 
 (defun clojure-ts--list-node-sym-text (node &optional include-anon-fn-lit)
